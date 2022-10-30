@@ -1,0 +1,164 @@
+#!/opt/homebrew/bin/php
+<?php
+$ppkg_version = 'v0.2.1-beta';
+$ppkg_url = 'http://localhost:8888/tmp/';
+$ppkg_api = 'http://localhost:8888/api.php';
+$ppkg_help = 'PPKG (PHP Package Manger)
+
+Welcome to the new PHP Package Manager.
+
+HOW TO USE PPKG
+
+i         - This is an alias for "install"
+install   - Require a package. Usage: install <package_author>/<package_name>
+u         - This is an alias for "uninstall"
+uninstall - Unrequire a package. Usage: uninstall <package_author>/<package_name>
+r         - This is an alias for "reformat"
+reformat  - This will reformat ppkg.json
+b         - This is an alias for "build"
+build     - Install all packages required in ppkg.json.
+
+Version: ' . $ppkg_version . '
+';
+if (php_sapi_name() !== 'cli') {
+    echo "Sorry, an error occured: not using CLI!\n";
+    exit;
+}
+function showHelp() {
+    global $ppkg_url, $ppkg_help;
+    echo $ppkg_help;
+    exit;
+}
+function createJson() {
+    global $ppkg_version;
+    $json = [
+        'packages' => [],
+        'ppkgversion' => $ppkg_version
+    ];
+    file_put_contents('ppkg.json', json_encode($json, JSON_PRETTY_PRINT));
+    echo "[ALERT]: ppkg.json file created.\n";
+}
+function runCommand($argv) {
+    global $ppkg_url, $ppkg_api, $ppkg_version;
+    if (isset($argv[1])) {
+        $action = $argv[1];
+        if ((trim(strtolower($action)) == 'install') || (trim(strtolower($action)) == 'i')) {
+            
+            if (!isset($argv[2])) {
+                showHelp();
+            } else {
+                $package = $argv[2];
+                $packages = explode('/', $package);
+                if (empty($packages[0]) || empty($packages[1])) {
+                    showHelp();
+                } else {
+                    if (!file_exists('ppkg.json')) {
+                        echo "[WARNING]: ppkg.json doesn't exist. Creating a new file...\n";
+                        createJson();
+                    }
+                    $uname = trim($packages[0]);
+                    $pkg = trim($packages[1]);
+//                    echo "UNAME: $uname PKG: $pkg
+//";
+                    $obj = json_decode(file_get_contents('ppkg.json'), true);
+                    $pkgs = $obj['packages'];
+                    array_push($pkgs, "$uname/$pkg");
+                    $obj['packages'] = $pkgs;
+                    file_put_contents('ppkg.json', json_encode($obj, JSON_PRETTY_PRINT));
+                    echo "[ALERT]: successfully required package $uname/$pkg
+Please run:
+
+ppkg build
+
+To install the packages.
+\n";
+                    exit;
+                }
+            }
+            
+            
+        } elseif ((trim(strtolower($action)) == 'uninstall') || (trim(strtolower($action)) == 'u')) {
+            die('Uninstalling...');
+        } elseif ((trim(strtolower($action)) == 'build') || (trim(strtolower($action)) == 'b')) {
+            echo "[ALERT]: building...\n";
+            sleep(1);
+            echo "[ALERT]: reading ppkg.json...\n";
+            $ppkg = json_decode(file_get_contents('ppkg.json'), true);
+            $phpstr = "<?php
+# Please do not modify this file
+# Created by PPKG
+# PPKG Version: $ppkg_version
+# PPKG URL: $ppkg_url
+# PPKG API: $ppkg_api
+";
+            if (!isset($ppkg['packages'])) {
+                die("[ERROR]: ppkg packages are empty! Please run:
+
+ppkg --help
+
+For more information.\n");
+            }
+            $pkgs = $ppkg['packages'];
+            if (!is_dir('ppkg')) {
+                        mkdir('ppkg');
+                    }
+            foreach($pkgs as $pkg) {
+                // Loop through packages
+                $pkgsplit = explode('/', $pkg);
+                if (!isset($pkgsplit[0]) || !isset($pkgsplit[1])) {
+                    die("[ERROR]: ppkg package formatted incorrectly!
+
+Package name: $pkg
+
+Please look at ppkg.json and fix this issue.
+Run:
+
+ppkg --help
+
+For more information \n");
+                }
+                $uname = trim(strtolower($pkgsplit[0]));
+                $package = trim(strtolower($pkgsplit[1]));
+                $pkgid = trim(file_get_contents($ppkg_api . '?un=' . urlencode($uname) . '&pkg=' . urlencode($package)));
+                if (substr($pkgid, 0, strlen('PPKG_FILEID_')) == 'PPKG_FILEID_') {
+                    $pkgurl = $ppkg_url . substr($pkgid, strlen('PPKG_FILEID_')) . '.zip';
+                    file_put_contents("$pkgid.zip", file_get_contents($pkgurl));
+                    if (!is_dir("ppkg/$uname")) {
+                        mkdir("ppkg/$uname");
+                    }
+                    $zip = new ZipArchive;
+                    $zip->open("$pkgid.zip");
+                    $zip->extractTo("ppkg/$uname");
+                    $dir = trim($zip->getNameIndex(0), '/');
+                    rename("ppkg/$uname/$dir", "ppkg/$uname/$package");
+                    $zip->close();
+                    unlink($pkgid . '.zip');
+                    $phpstr .= "include '$uname/$package/ppkg.load.php';\n";
+                    echo "[ALERT]: installed package $uname/$package\n";
+                } else {
+                    die("[ERROR]: ppkg package issue! Please check that package:
+$pkg
+
+exists and is valid.\n");
+                }
+            }
+            file_put_contents('ppkg/autoload.php', $phpstr);
+        } elseif ((trim(strtolower($action)) == '-h') || (trim(strtolower($action)) == '--help') || (trim(strtolower($action)) == 'help') || (trim(strtolower($action)) == 'h')) {
+            showHelp();
+        } elseif ((trim(strtolower($action)) == 'reformat') || (trim(strtolower($action)) == 'r')) {
+            echo '[ALERT]: reformatting...' . "\n";
+            if (!file_exists('ppkg.json')) {
+                echo "[WARNING]: ppkg.json doesn't exist. Creating a new file...\n";
+                createJson();
+            }
+            file_put_contents('ppkg.json', json_encode(json_decode(file_get_contents('ppkg.json'), true), JSON_PRETTY_PRINT));
+            echo "[ALERT]: ppkg.json file reformatted.\n";
+        } else {
+            showHelp();
+        }
+    } else {
+        showHelp();
+    }
+}
+
+runCommand($argv);
