@@ -1,4 +1,4 @@
-#!/opt/homebrew/bin/php
+#!php
 <?php
 $ppkg_version = 'v0.2.1-beta';
 $ppkg_url = 'http://localhost:8888/tmp/';
